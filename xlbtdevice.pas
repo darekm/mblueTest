@@ -1,3 +1,4 @@
+{%RunFlags BUILD-}
 unit xlbtdevice;
 
 {$mode objfpc}{$H+}
@@ -16,18 +17,19 @@ const
   MAX_INQUIRY_ROUNDS          = 10;
 AUX_RSSI_CALC               = 255.0; // floating point precision needed
 // positions
-RESPONSE_LENGTH_POS         = 2;
+RESPONSE_LENGTH_POS         = 3;
 MAC_ADDRESS_START_POS       = 8;
 MAC_ADDRESS_LEN             = 6;
 MAC_ADDRESS_END_POS         = MAC_ADDRESS_START_POS + 6;
 EVENT_CODE_POSITION         = 4;
-ERROR_CODE_POSITION         = 5;
-RSSI_VALUE_POSITION         = 14;
-EVENT_TYPE_POSITION         = 6;
+ERROR_CODE_POSITION         = 6;
+RSSI_VALUE_POSITION         = 15;
+EVENT_TYPE_POSITION         = 7;
 // events and return codes
-EVENT_GAPDEVICEINFO         = #6#10;
+EVENT_GAPDEVICEINFO         = #6#0;
 EVENT_GAPNOTIFICATION       = #05#$1b;
-EVENT_DEVICEDISCOVERED      = #4;
+EVENT_DEVICEDISCOVERED      = #4#0;
+EVENT_GAPEXTENSIONCOMMANSTATUS =#6#$7f;
 SUCCESS_CODE                = 0;
 // multipliers (seconds / 100) (ex: 100 --> 1 second)
 INQUIRY_MULTIPLIER          = 96.0;
@@ -35,11 +37,13 @@ CONNECTION_MULTIPLIER       = 10;
 HCI_NORMAL_MULTIPLIER       = 5;
 
 // HCI commands
-GAP_DeviceInit              = #1#0#$fe#$26#$8;
+GAP_DeviceInit              = #1#0#$fe#$26#8#3#0#0#0#0#0#0#0#0
+                            + #0#0#0#0#0#0#0#0#0#0#0#0#0#0
+                            + #0#0#0#0#0#0#0#0#0#0#0#0#0#0;
 //                            "\x01\x00\xfe\x26\x08\x03\x00\x00\x00\x00\x00\x00\x00\x00\
 //                            \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
 //                            \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00"
-GAP_DeviceDiscoveryRequest  = #1#4#$fe#3#1#0;
+GAP_DeviceDiscoveryRequest  = #1#4#$fe#3#3#1#0;
 //                            "\x01\x04\xfe\x03\x03\x01\x00"
 GAP_DeviceDiscoveryCancel   = #1#5#$fe#0;
 //                            "\x01\x05\xfe\x00"
@@ -69,10 +73,19 @@ type
       destructor destroy;override;
       procedure Write(s : string);
       procedure Read(aMultiplier : double);
+      property OnDebug :debugproc write fDebug;
 
   end;
 
 implementation
+
+function asHex(s : string):string;
+begin
+
+     SetLength(result, Length(s) * 2);
+  { Call the binary to hexadecimal conversion procedure. }
+  BinToHex(pchar(s), PChar(result), Length(s) * SizeOf(Char));
+end;
 
 procedure tBTDevice.debugln(s1:string;s2:string='';s3:string='');
 var
@@ -120,27 +133,29 @@ begin
        end;
   serial:=TBlockSerial.Create;
   serial.linuxLock:=false;
-  try
+//  try
     serial.Connect(scom[anr-1]);
 
-    serial.config(57600,8,'N',1,false,false);
+  //  serial.config(115200,8,'N',1,false,false);
+    serial.config(57600,8,'N',1,false,true);
 
 //    piszlog(logrCP,'start 3',scom[anr-1],ser.lasterror,false);
-  except
-    serial:=nil;
-  end;
+//  except
+//    serial:=nil;
+//  end;
 end;
 
 
 function tBTDevice.ReadLine:string;
 begin
-  if serial.waitingData<>0 then begin
+ // if serial.waitingData<>0 then begin
     result:=serial.recvPacket(100);
-    debugln('odcztyy '+inttostr(length(result))+':'+result);
+    if result<>'' then
+    debugln('odcztyy '+inttostr(length(result))+':'+asHex(result));
 
-  end else begin
-    result:='';
-  end;
+//  end else begin
+//    result:='';
+ // end;
 
 
 end;
@@ -166,21 +181,23 @@ begin
     //read from serial during timeout, events parsed by arrival
     // serial read_time control variables
     string_to_parse := False;
-    timeout := 0.01 * aMultiplier;
+    timeout := (1/(24*60*60*100.0)) * aMultiplier;
     // print "\t(%d seconds remaining...)" %timeout
-    start := now;
+    start := now+timeout;
+ //   debugln('read start ');
 
     //read from serial port and show results
-    while start+timeout > now() do begin
+ //   while start > now() do begin
         // try to work 'til timeout
         string_to_parse := True;
         return_line := readline();
+   //     debugln('time ',format(' %d %d ',[start,now()]));
         // while thereis string to parse
         while string_to_parse do begin
-            if length(return_line) > 2 then begin
+            if length(return_line) > 3 then begin
                // frame parsing
                 return_lenght := ord(return_line[RESPONSE_LENGTH_POS]) + 1;
-                event := return_line[EVENT_CODE_POSITION] + return_line[EVENT_CODE_POSITION - 1];
+                event := return_line[EVENT_CODE_POSITION+1] + return_line[EVENT_CODE_POSITION ];
                 event_type := return_line[EVENT_TYPE_POSITION];
                 if (event = EVENT_GAPDEVICEINFO) and (event_type = EVENT_DEVICEDISCOVERED) then begin
                     debugln('tresponse frame = ' + return_line);
@@ -200,12 +217,14 @@ begin
                 end;
 
                 // next subframe within frame
-                return_line := return_line[(return_lenght + RESPONSE_LENGTH_POS)];
+                return_line := copy(return_line,(return_lenght + RESPONSE_LENGTH_POS), 1000);
+                return_line:=return_line+readline();
             end else begin
                 string_to_parse := False;
             end;
         end;
-    end;
+ //   end;
+ //   debugln('read stop');
                 //serial_fd.flushInput(); serial_fd.flushOutput();
 end;
 

@@ -1,3 +1,4 @@
+{%RunFlags BUILD-}
 program mblue;
 
 {$mode objfpc}{$H+}
@@ -7,8 +8,7 @@ uses
   cthreads,
   {$ENDIF}{$ENDIF}
   Interfaces, // this includes the LCL widgetset
-  Forms, mbmain, xlbtdevice
-  { you can add units after this };
+  Forms, mbmain, xlbtdevice;
 
 {$R *.res}
 
