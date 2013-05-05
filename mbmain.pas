@@ -16,19 +16,24 @@ type
 
   TForm1 = class(TForm)
     Button1: TButton;
+    Button2: TButton;
     Edit1: TEdit;
+    Label1: TLabel;
     Memo1: TMemo;
+    procedure buttonscan(Sender: TObject);
+    procedure buttonClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
   private
-    BLE : tBtDevice;
-    machine_state : integer;
+    BLE: tBtDevice;
+    machine_state: integer;
+    run: boolean;
     { private declarations }
-    procedure print(s:string);
+    procedure print(s: string);
   public
     { public declarations }
-    procedure Doactivate(sender : tObject);
-    procedure main;
+    procedure Initialize;
+    procedure scan;
   end;
 
 var
@@ -39,100 +44,167 @@ implementation
 {$R *.lfm}
 
 const
-DEVICE_INIT_STATE           = 0;
-GET_PARAM_STATE             = 1;
-INQUIRY_STATE               = 2;
-CANCEL_INQUIRY_STATE        = 3;
-LINK_REQ_ESTABLISH_STATE    = 4;
-ATT_WRITE_VALUE_STATE       = 5;
-ATT_WRITE_BEHAVIOUR_STATE   = 6;
-WAITING_NOTIFICATION_STATE  = 7;
-TERMINATING_LINK_STATE      = 8;
+  DEVICE_INIT_STATE = 0;
+  GET_PARAM_STATE   = 1;
+  INQUIRY_STATE     = 2;
+  CANCEL_INQUIRY_STATE = 3;
+  LINK_REQ_ESTABLISH_STATE = 4;
+  ATT_WRITE_VALUE_STATE = 5;
+  ATT_WRITE_BEHAVIOUR_STATE = 6;
+  WAITING_NOTIFICATION_STATE = 7;
+  TERMINATING_LINK_STATE = 8;
+
+
+    MAX_INQUIRY_ROUNDS          = 100;
+
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-    print ('Bluetooth Low Energy simple demo under Linux.');
-    print ('---------------------------------------------');
-   // serial._fd globally defined
-   BLE:=tBtDevice.create(3);
+  print('Bluetooth Low Energy simple demo under Linux.');
+  print('---------------------------------------------');
+  // serial._fd globally defined
+  BLE := tBtDevice.Create(3);
+  BLE.OnDebug := @print;
 
+end;
+
+procedure TForm1.buttonClick(Sender: TObject);
+begin
+  run := True;
+  Initialize();
+end;
+
+procedure TForm1.buttonscan(Sender: TObject);
+begin
+
+  scan();
 end;
 
 
 procedure TForm1.FormDestroy(Sender: TObject);
 begin
-    BLE.destroy;
-
+  BLE.Destroy;
 end;
 
-procedure tForm1.print(s : string);
+procedure tForm1.print(s: string);
 begin
-    memo1.Append(s+#10);
-
-end;
-
-procedure TForm1.Doactivate(sender: tObject);
-begin
-
+  memo1.Append(s+#10);
 end;
 
 
 
-
-procedure  tForm1.main();
+procedure tForm1.scan();
 var
-    inquiry_rounds: integer;
-    operation_multiplier: double;
+  lp : integer;
+  inquiry_rounds : integer;
+  operation_multiplier: double;
 begin
-//    os.system("clear")
-   // machine states
-    // inquiry rounds
-    inquiry_rounds := 0;
-    machine_state := DEVICE_INIT_STATE;
+  print('start scan');
+  inquiry_rounds:=0;
+  label1.Caption := 'scan';
+  machine_state := LINK_REQ_ESTABLISH_STATE;
+  while (machine_state < TERMINATING_LINK_STATE) do
+  begin
+    operation_multiplier := HCI_NORMAL_MULTIPLIER;
+    Inc(lp);
+    if machine_state = LINK_REQ_ESTABLISH_STATE then begin
+       print('REQ establish state '+asHex(GAP_EstablishLinkRequest+BLE.peerAddr));
+      BLE.Write(GAP_EstablishLinkRequest+BLE.PeerAddr);
+      Inc(machine_state);
 
-    // continuous bucle state_machine
-    while(machine_state < LINK_REQ_ESTABLISH_STATE) do begin
-        // operation timeout
-        operation_multiplier := HCI_NORMAL_MULTIPLIER;
-
-        // Tx command sent to serial
-        // Rx event HCI_LE_ExtEvent (command status from HCI)
-        // + Rx event (command results from GAP)
-        // + Rx event (command END from HCI)
-        if machine_state = DEVICE_INIT_STATE then begin
-            print (GAP_DeviceInit);
-            BLE.write(GAP_DeviceInit);
-            inc(machine_state);
-        end else if  machine_state = GET_PARAM_STATE then begin
-	    // really, now we are not doing anything here"
-	    inc(machine_state);
-        end else if machine_state = INQUIRY_STATE then begin
-            operation_multiplier := INQUIRY_MULTIPLIER;
-
-            if(inquiry_rounds < MAX_INQUIRY_ROUNDS) then begin
-               if(inquiry_rounds = 0) then begin
-	 	    // first time
-		    print ('GAP_DeviceDiscoveryRequest');
-                    BLE.write(GAP_DeviceDiscoveryRequest);
-		    inc(inquiry_rounds );
-	       end else if (inquiry_rounds = MAX_INQUIRY_ROUNDS) then begin
-		  // last time
-	          inc(machine_state)
-               end;
-            end;
-        end else if  machine_state = CANCEL_INQUIRY_STATE then begin
-            print ('Canceling GAP_DeviceDiscoveryRequest just-in-case:');
-            BLE.write(GAP_DeviceDiscoveryCancel);
-	    // next statement situates machine_state in LINK_REQ_ESTABLISH_STATE, and we finish this little demo here
-	    inc(machine_state);
-        end;
-
-        // always try to read after state_machine
-        BLE.read(operation_multiplier);
+    end else begin
+      Inc(machine_state);
     end;
-    print ('End of execution.');
-   end;
+      BLE.Read(operation_multiplier);
+       if not run then
+         break;
+       application.ProcessMessages;
+
+
+
+  end;
+  print('end scan');
+
+end;
+
+procedure tForm1.Initialize();
+var
+  inquiry_rounds: integer;
+  operation_multiplier: double;
+  lp: integer;
+begin
+  //    os.system("clear")
+  // machine states
+  // inquiry rounds
+  inquiry_rounds := 0;
+  machine_state := DEVICE_INIT_STATE;
+  print('start');
+
+  // continuous bucle state_machine
+  while (machine_state < LINK_REQ_ESTABLISH_STATE) do
+  begin
+    // operation timeout
+    operation_multiplier := HCI_NORMAL_MULTIPLIER;
+    Inc(lp);
+    //      label1.caption:=inttostr(lp);
+
+
+    // Tx command sent to serial
+    // Rx event HCI_LE_ExtEvent (command status from HCI)
+    // + Rx event (command results from GAP)
+    // + Rx event (command END from HCI)
+    if machine_state = DEVICE_INIT_STATE then
+    begin
+      print('GAP_DeviceInit');
+      BLE.Write(GAP_DeviceInit);
+      Inc(machine_state);
+    end
+    else if machine_state = GET_PARAM_STATE then
+    begin
+      // really, now we are not doing anything here"
+      print('get param state');
+      BLE.Write(GAP_GetParam+TGAP_CONN_EST_INT_MIN);
+      Inc(machine_state);
+    end
+    else if machine_state = INQUIRY_STATE then
+    begin
+      operation_multiplier := INQUIRY_MULTIPLIER;
+
+      if (inquiry_rounds < MAX_INQUIRY_ROUNDS) then
+      begin
+        if (inquiry_rounds = 0) then
+        begin
+          // first time
+          print('GAP_DeviceDiscoveryRequest');
+          BLE.Write(GAP_DeviceDiscoveryRequest+tGAP_DiscoveryActive);
+        end;
+        Inc(inquiry_rounds);
+        if BLE.connectable then
+           inc(machine_state);
+      end
+      else if (inquiry_rounds = MAX_INQUIRY_ROUNDS) then
+      begin
+          // last time
+          Inc(machine_state);
+
+      end;
+    end
+    else if machine_state = CANCEL_INQUIRY_STATE then
+    begin
+  //    print('Canceling GAP_DeviceDiscoveryRequest just-in-case:');
+ //     BLE.Write(GAP_DeviceDiscoveryCancel);
+      // next statement situates machine_state in LINK_REQ_ESTABLISH_STATE, and we finish this little demo here
+      Inc(machine_state);
+    end;
+
+    // always try to read after state_machine
+    BLE.Read(operation_multiplier);
+    if not run then
+      break;
+    application.ProcessMessages;
+  end;
+  print('End initialize');
+end;
 
 
 end.
-
